@@ -21,4 +21,11 @@ target_link_libraries(CPAttributes
         PRIVATE cppast
         )
 
+add_executable(CPTest
+        test/test.cpp
+        )
 
+target_include_directories(CPTest
+        PRIVATE ../test
+        PRIVATE ../serde
+        )

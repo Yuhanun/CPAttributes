@@ -2,55 +2,40 @@
 #define HEADER_JSON_ATTRIBUTE
 
 #include <nlohmann/json.hpp>
+#include "../test/json_tests.hpp"
+
 
 namespace json {
+	using namespace test;
 
-	inline nlohmann::json to_json(Example const& object);
-	inline Example example_from_json(nlohmann::json const& data);
-	inline nlohmann::json to_json(Another const& object);
-	inline Another another_from_json(nlohmann::json const& data);
-	inline nlohmann::json to_json(Nested const& object);
-	inline Nested nested_from_json(nlohmann::json const& data);
+	void to_json(nlohmann::json& output, Example const& object);
+	void from_json(nlohmann::json const& data, Example& output);
+	void to_json(nlohmann::json& output, Another const& object);
+	void from_json(nlohmann::json const& data, Another& output);
+	void to_json(nlohmann::json& output, Nested const& object);
+	void from_json(nlohmann::json const& data, Nested& output);
 
-	inline nlohmann::json to_json(Example const& object) {
-		nlohmann::json output{};
-		output["name"] = name;
-		output["example"] = example;
-		return output;
+	void to_json(nlohmann::json& output, Example const& object) {
+		output["name"] = object.name;
+		output["example"] = object.example;
 	}
-
-	inline Example example_from_json(nlohmann::json const& data) {
-		Example output;
+	void from_json(nlohmann::json const& data, Example& output) {
 		output.name = data["name"];
 		output.example = data["example"];
-		return output;
 	}
-
-	inline nlohmann::json to_json(Another const& object) {
-		nlohmann::json output{};
-		output["another"] = another;
-		return output;
+	void to_json(nlohmann::json& output, Another const& object) {
+		output["another"] = object.another;
 	}
-
-	inline Another another_from_json(nlohmann::json const& data) {
-		Another output;
+	void from_json(nlohmann::json const& data, Another& output) {
 		output.another = data["another"];
-		return output;
 	}
-
-	inline nlohmann::json to_json(Nested const& object) {
-		nlohmann::json output{};
-		output["first"] = to_json(object.first);
-		output["second"] = to_json(object.second);
-		return output;
+	void to_json(nlohmann::json& output, Nested const& object) {
+		output["first"] = object.first;
+		output["second"] = object.second;
 	}
-
-	inline Nested nested_from_json(nlohmann::json const& data) {
-		Nested output;
-		output.first = test::another_from_json(data["first"]);
-		output.second = test::example_from_json(data["second"]);
-		return output;
+	void from_json(nlohmann::json const& data, Nested& output) {
+		output.first = data["first"];
+		output.second = data["second"];
 	}
-
 } // namespace json
 #endif // HEADER_JSON_ATTRIBUTE

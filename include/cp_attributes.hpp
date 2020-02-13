@@ -43,63 +43,34 @@ namespace attributes {
                                specific_parser const &func) {
             func(dynamic_cast<const cppast::cpp_class &>(e), output, header);
         }
-
-        inline std::string to_lower(std::string const &orig) {
-            std::string lower;
-            std::transform(orig.begin(), orig.end(), std::back_inserter(lower), ::tolower);
-            return lower;
-        }
     }  // namespace
 
     namespace json {
-        inline static std::set<std::string> supported = {
-                "uint8_t", "unsigned char", "char", "int8_t",
-                "uint16_t", "int16_t", "uint32_t", "int32_t",
-                "uint64_t", "int64_t", "int", "unsigned int",
-                "long", "unsigned long", "long long", "unsigned long long",
-                "std::string", "std::wstring", "bool"
-        };
-
         inline void generate_to_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
-            header << "\n\tinline nlohmann::json to_json(" << e.name() << " const& object);";
-            output << "\n\tinline nlohmann::json to_json(" << e.name() << " const& object) {\n"
-                   << "\t\tnlohmann::json output{};\n";
+            header << "\n\tinline void to_json(nlohmann::json& output, " << e.name() << " const& object);";
+            output << "\n\tinline void to_json(nlohmann::json& output, " << e.name() << " const& object) {\n";
 
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
-                    auto const &field = dynamic_cast<cppast::cpp_member_variable const &>(each);
-                    auto type_name = cppast::to_string(field.type());
-                    if (supported.contains(type_name)) {
-                        output << "\t\toutput[\"" << each.name() << "\"] = " << each.name() << ";\n";
-                    } else {
-                        output << "\t\toutput[\"" << each.name() << "\"] = to_json(object." << each.name() << ");\n";
-                    }
+                    output << "\t\toutput[\"" << each.name() << "\"] = object." << each.name() << ";\n";
                 }
             }
-            output << "\t\treturn output;\n\t}\n";
+            output << "\t}";
         }
 
         inline void
         generate_from_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
-            output << "\n\tinline " << e.name() << " " << to_lower(e.name())
-                   << "_from_json(nlohmann::json const& data) {\n"
-                   << "\t\t" << e.name() << " output;\n";
-            header << "\n\tinline " << e.name() << " " << to_lower(e.name())
-                   << "_from_json(nlohmann::json const& data);";
+            header << "\n\tinline void from_json(nlohmann::json const& data, " << e.name() << "& output);";
+            output << "\n\tinline void from_json(nlohmann::json const& data, " << e.name() << "& output) {\n";
 
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
                     auto const &field = dynamic_cast<cppast::cpp_member_variable const &>(each);
                     auto type_name = cppast::to_string(field.type());
-                    if (supported.contains(type_name)) {
-                        output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
-                    } else {
-                        output << "\t\toutput." << each.name() << " = " << to_lower(type_name) << "_from_json(data[\""
-                               << each.name() << "\"]);\n";
-                    }
+                    output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
                 }
             }
-            output << "\t\treturn output;\n\t}\n";
+            output << "\t}";
         }
 
         inline void generate_all(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
@@ -110,13 +81,17 @@ namespace attributes {
         inline void generate_function(cppast::cpp_file &file, std::stringstream &output, std::stringstream &header) {
             cppast::visit(
                     file,
-                    [&](const cppast::cpp_entity &e) {
-                        return e.kind() == cppast::cpp_entity_kind::class_t &&
-                               cppast::has_attribute(e, "attribute::json");
+                    [&](const cppast::cpp_entity &) {
+                        return true;
                     },
                     [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
                         if (info.is_new_entity()) {
-                            class_call(e, output, header, json::generate_all);
+                            if (e.kind() == cppast::cpp_entity_kind::class_t) {
+                                class_call(e, output, header, json::generate_all);
+                            }
+                            if (e.kind() == cppast::cpp_entity_kind::namespace_t) {
+                                header << "\tusing namespace " << e.name() << ";\n";
+                            }
                         }
                         return true;
                     });
@@ -131,8 +106,11 @@ namespace attributes {
             std::ofstream output_file{filename};
             output_file << "#ifndef HEADER_JSON_ATTRIBUTE" << std::endl
                         << "#define HEADER_JSON_ATTRIBUTE\n\n"
-                        << "#include <nlohmann/json.hpp>"
-                        << "\n\nnamespace json {\n";
+                        << "#include <nlohmann/json.hpp>\n";
+            for (auto const &each : files) {
+                output_file << "#include \"" << each << "\"\n";
+            }
+            output_file << "\n\nnamespace json {\n";
 
             for (auto const &file : files) {
                 std::cout << "Generating to_json and from_json for file: " << file << std::endl;

@@ -8,7 +8,7 @@
 #include <string>
 
 namespace test {
-    class [[attribute::json]] Example {
+    struct [[attribute::json]] Example {
         std::string name;
         bool example;
     };
