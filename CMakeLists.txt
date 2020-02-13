@@ -17,4 +17,8 @@ else()
     target_compile_options(CPAttributes PRIVATE -Wall -Wextra -pedantic -Werror)
 endif()
 
+target_link_libraries(CPAttributes
+        PRIVATE cppast
+        )
+
 

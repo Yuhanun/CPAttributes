@@ -5,8 +5,10 @@
 #ifndef CPATTRIBUTES_JSON_TESTS_HPP
 #define CPATTRIBUTES_JSON_TESTS_HPP
 
-namespace attributes {
-    struct [[attributes::json]] Example {
+#include <string>
+
+namespace test {
+    class [[attributes::json]] Example {
         std::string name;
         bool example;
     };

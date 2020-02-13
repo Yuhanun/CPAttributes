@@ -70,7 +70,7 @@ namespace attributes {
             cppast::libclang_parser parser;
             cppast::cpp_entity_index idx;
             std::stringstream output{};
-            output << "#ifndef HEADER_JSON_ATTRIBUTE\n#define HEADER_JSON_ATTRIBUTE\n#endif\n\nnamespace json {\n";
+            output << "#ifndef HEADER_JSON_ATTRIBUTE\n#define HEADER_JSON_ATTRIBUTE\n\nnamespace json {\n";
 
             for (auto const &file : files) {
                 std::cout << "Generating to_json and from_json for file: " << file << std::endl;
@@ -78,7 +78,7 @@ namespace attributes {
                 json::generate_function(*parsed_file, output);
             }
 
-            output << "\n} // namespace json";
+            output << "\n} // namespace json\n#endif // HEADER_JSON_ATTRIBUTE";
             std::cout << output.str();
         }
 
