@@ -22,7 +22,7 @@
 namespace attributes {
     namespace {
         using function_type = std::function<void(std::vector<std::string> const &,
-                                                 cppast::libclang_compile_config const &)>;
+                                                 cppast::libclang_compile_config const &, std::string const&)>;
         using specific_parser = std::function<void(const cppast::cpp_class &, std::stringstream &)>;
 
         std::vector<std::string>
@@ -56,7 +56,9 @@ namespace attributes {
         }
 
         inline void generate_from_json(const cppast::cpp_class &e, std::stringstream &output) {
-            output << "\n\tinline " << e.name() << " from_json(nlohmann::json const& data) {\n"
+            std::string name_lower = e.name();
+            std::transform(name_lower.begin(), name_lower.end(),  name_lower.begin(), ::tolower);
+            output << "\n\tinline " << e.name() << " " << name_lower << "_from_json(nlohmann::json const& data) {\n"
                    << "\t\t" << e.name() << " output;\n";
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
@@ -87,7 +89,7 @@ namespace attributes {
         }
 
         inline void
-        generate_json(std::vector<std::string> const &files, cppast::libclang_compile_config const &config) {
+        generate_json(std::vector<std::string> const &files, cppast::libclang_compile_config const &config, std::string const& filename) {
             cppast::libclang_parser parser;
             cppast::cpp_entity_index idx;
             std::stringstream output{};
@@ -103,7 +105,8 @@ namespace attributes {
             }
 
             output << "\n} // namespace json\n#endif // HEADER_JSON_ATTRIBUTE";
-            std::cout << output.str();
+            std::ofstream output_file{filename};
+            output_file << output.str();
         }
 
 
@@ -112,9 +115,11 @@ namespace attributes {
 
     int run(std::string_view base, std::initializer_list<std::string> extensions,
             std::initializer_list<std::string> types,
-            cppast::libclang_compile_config config) {
+            cppast::libclang_compile_config config = cppast::libclang_compile_config(),
+            std::string const &output_file = "serde.hpp",
+            std::string const& folders = ".") {
         static std::unordered_map<std::string, function_type> functions = {
-            { "json", json::generate_json }
+                {"json", json::generate_json}
         };
 
         std::vector<function_type> funcs{};
@@ -128,8 +133,10 @@ namespace attributes {
 
         auto all_files = get_all_files(base, extensions);
 
+        std::filesystem::create_directories(folders);
+
         std::for_each(funcs.begin(), funcs.end(), [&](auto const &func) {
-            func(all_files, config);
+            func(all_files, config, folders + "/" + output_file);
         });
 
         return 0;
