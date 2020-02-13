@@ -16,6 +16,11 @@ namespace test {
     struct [[attribute::json]] Another {
         std::string another;
     };
+
+    struct [[attribute::json]] Nested {
+        Another first;
+        Example second;
+    };
 }  // namespace test
 
 #endif  //CPATTRIBUTES_JSON_TESTS_HPP

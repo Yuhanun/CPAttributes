@@ -18,12 +18,14 @@
 #include <iterator>
 #include <string>
 #include <vector>
+#include <set>
 
 namespace attributes {
     namespace {
         using function_type = std::function<void(std::vector<std::string> const &,
-                                                 cppast::libclang_compile_config const &, std::string const&)>;
-        using specific_parser = std::function<void(const cppast::cpp_class &, std::stringstream &)>;
+                                                 cppast::libclang_compile_config const &, std::string const &)>;
+        using specific_parser = std::function<void(const cppast::cpp_class &, std::stringstream &,
+                                                   std::stringstream &)>;
 
         std::vector<std::string>
         get_all_files(std::string_view base, std::initializer_list<std::string> valid_extensions) {
@@ -37,55 +39,87 @@ namespace attributes {
             return result;
         }
 
-        inline void class_call(const cppast::cpp_entity &e, std::stringstream &output, specific_parser const &func) {
-            func(dynamic_cast<const cppast::cpp_class &>(e), output);
+        inline void class_call(const cppast::cpp_entity &e, std::stringstream &output, std::stringstream &header,
+                               specific_parser const &func) {
+            func(dynamic_cast<const cppast::cpp_class &>(e), output, header);
+        }
+
+        inline std::string to_lower(std::string const &orig) {
+            std::string lower;
+            std::transform(orig.begin(), orig.end(), std::back_inserter(lower), ::tolower);
+            return lower;
         }
     }  // namespace
 
     namespace json {
-        inline void generate_to_json(const cppast::cpp_class &e, std::stringstream &output) {
+        inline static std::set<std::string> supported = {
+                "uint8_t", "unsigned char", "char", "int8_t",
+                "uint16_t", "int16_t", "uint32_t", "int32_t",
+                "uint64_t", "int64_t", "int", "unsigned int",
+                "long", "unsigned long", "long long", "unsigned long long",
+                "std::string", "std::wstring", "bool"
+        };
+
+        inline void generate_to_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
+            header << "\n\tinline nlohmann::json to_json(" << e.name() << " const& object);";
             output << "\n\tinline nlohmann::json to_json(" << e.name() << " const& object) {\n"
                    << "\t\tnlohmann::json output{};\n";
 
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
-                    output << "\t\toutput[\"" << each.name() << "\"] = " << each.name() << ";\n";
+                    auto const &field = dynamic_cast<cppast::cpp_member_variable const &>(each);
+                    auto type_name = cppast::to_string(field.type());
+                    if (supported.contains(type_name)) {
+                        output << "\t\toutput[\"" << each.name() << "\"] = " << each.name() << ";\n";
+                    } else {
+                        output << "\t\toutput[\"" << each.name() << "\"] = to_json(object." << each.name() << ");\n";
+                    }
                 }
             }
             output << "\t\treturn output;\n\t}\n";
         }
 
-        inline void generate_from_json(const cppast::cpp_class &e, std::stringstream &output) {
-            std::string name_lower = e.name();
-            std::transform(name_lower.begin(), name_lower.end(),  name_lower.begin(), ::tolower);
-            output << "\n\tinline " << e.name() << " " << name_lower << "_from_json(nlohmann::json const& data) {\n"
+        inline void
+        generate_from_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
+            output << "\n\tinline " << e.name() << " " << to_lower(e.name())
+                   << "_from_json(nlohmann::json const& data) {\n"
                    << "\t\t" << e.name() << " output;\n";
+            header << "\n\tinline " << e.name() << " " << to_lower(e.name())
+                   << "_from_json(nlohmann::json const& data);";
+
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
-                    output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
+                    auto const &field = dynamic_cast<cppast::cpp_member_variable const &>(each);
+                    auto type_name = cppast::to_string(field.type());
+                    if (supported.contains(type_name)) {
+                        output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
+                    } else {
+                        output << "\t\toutput." << each.name() << " = " << to_lower(type_name) << "_from_json(data[\""
+                               << each.name() << "\"]);\n";
+                    }
                 }
             }
             output << "\t\treturn output;\n\t}\n";
         }
 
-        inline void generate_all(const cppast::cpp_class &e, std::stringstream &output) {
-            generate_to_json(e, output);
-            generate_from_json(e, output);
+        inline void generate_all(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
+            generate_to_json(e, output, header);
+            generate_from_json(e, output, header);
         }
 
-        inline void generate_function(cppast::cpp_file &file, std::stringstream &output) {
+        inline void generate_function(cppast::cpp_file &file, std::stringstream &output, std::stringstream &header) {
             cppast::visit(
-                file,
-                [&](const cppast::cpp_entity &e) {
-                    return e.kind() == cppast::cpp_entity_kind::class_t &&
-                           cppast::has_attribute(e, "attribute::json");
-                },
-                [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
-                    if (info.is_new_entity()) {
-                        class_call(e, output, json::generate_all);
-                    }
-                    return true;
-                });
+                    file,
+                    [&](const cppast::cpp_entity &e) {
+                        return e.kind() == cppast::cpp_entity_kind::class_t &&
+                               cppast::has_attribute(e, "attribute::json");
+                    },
+                    [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
+                        if (info.is_new_entity()) {
+                            class_call(e, output, header, json::generate_all);
+                        }
+                        return true;
+                    });
         }
 
         inline void
@@ -93,20 +127,22 @@ namespace attributes {
             cppast::libclang_parser parser;
             cppast::cpp_entity_index idx;
             std::stringstream output{};
-            output << "#ifndef HEADER_JSON_ATTRIBUTE" << std::endl
-                   << "#define HEADER_JSON_ATTRIBUTE\n\n"
-                   << "#include <nlohmann/json.hpp>"
-                   << "\n\nnamespace json {\n";
+            std::stringstream header{};
+            std::ofstream output_file{filename};
+            output_file << "#ifndef HEADER_JSON_ATTRIBUTE" << std::endl
+                        << "#define HEADER_JSON_ATTRIBUTE\n\n"
+                        << "#include <nlohmann/json.hpp>"
+                        << "\n\nnamespace json {\n";
 
             for (auto const &file : files) {
                 std::cout << "Generating to_json and from_json for file: " << file << std::endl;
                 std::unique_ptr<cppast::cpp_file> parsed_file = parser.parse(idx, std::string(file), config);
-                json::generate_function(*parsed_file, output);
+                json::generate_function(*parsed_file, output, header);
             }
 
-            output << "\n} // namespace json\n#endif // HEADER_JSON_ATTRIBUTE";
-            std::ofstream output_file{filename};
+            output_file << header.str() << "\n";
             output_file << output.str();
+            output_file << "\n} // namespace json\n#endif // HEADER_JSON_ATTRIBUTE";
         }
 
 
