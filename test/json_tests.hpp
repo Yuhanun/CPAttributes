@@ -8,10 +8,14 @@
 #include <string>
 
 namespace test {
-    class [[attributes::json]] Example {
+    class [[attribute::json]] Example {
         std::string name;
         bool example;
     };
-}
 
-#endif //CPATTRIBUTES_JSON_TESTS_HPP
+    struct [[attribute::json]] Another {
+        std::string another;
+    };
+}  // namespace test
+
+#endif  //CPATTRIBUTES_JSON_TESTS_HPP

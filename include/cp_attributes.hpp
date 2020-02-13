@@ -5,19 +5,19 @@
 #ifndef CPATTRIBUTES_CP_ATTRIBUTES_HPP
 #define CPATTRIBUTES_CP_ATTRIBUTES_HPP
 
-#include <cppast/libclang_parser.hpp> // libclang_parser
-#include <cppast/cpp_enum.hpp> // cpp_enum
-#include <cppast/cpp_class.hpp> // cpp_class
-#include <cppast/visitor.hpp>  // visit()
-
-#include <initializer_list>
+#include <cppast/cpp_class.hpp>  // cpp_class
+#include <cppast/cpp_enum.hpp>   // cpp_enum
+#include <cppast/cpp_member_variable.hpp>
+#include <cppast/libclang_parser.hpp>  // libclang_parser
+#include <cppast/visitor.hpp>          // visit()
 #include <filesystem>
-#include <functional>
-#include <iterator>
-#include <iostream>
 #include <fstream>
-#include <vector>
+#include <functional>
+#include <initializer_list>
+#include <iostream>
+#include <iterator>
 #include <string>
+#include <vector>
 
 namespace attributes {
     namespace {
@@ -40,29 +40,50 @@ namespace attributes {
         inline void class_call(const cppast::cpp_entity &e, std::stringstream &output, specific_parser const &func) {
             func(dynamic_cast<const cppast::cpp_class &>(e), output);
         }
-    }
+    }  // namespace
 
     namespace json {
+        inline void generate_to_json(const cppast::cpp_class &e, std::stringstream &output) {
+            output << "\n\tinline nlohmann::json to_json(" << e.name() << " const& object) {\n"
+                   << "\t\tnlohmann::json output{};\n";
+
+            for (auto const &each : e) {
+                if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
+                    output << "\t\toutput[\"" << each.name() << "\"] = " << each.name() << ";\n";
+                }
+            }
+            output << "\t\treturn output;\n\t}\n";
+        }
+
+        inline void generate_from_json(const cppast::cpp_class &e, std::stringstream &output) {
+            output << "\n\tinline " << e.name() << " from_json(nlohmann::json const& data) {\n"
+                   << "\t\t" << e.name() << " output;\n";
+            for (auto const &each : e) {
+                if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
+                    output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
+                }
+            }
+            output << "\t\treturn output;\n\t}\n";
+        }
+
         inline void generate_all(const cppast::cpp_class &e, std::stringstream &output) {
-            output << "inline nlohmann::json to_json(" << e.name() << " const& object) {"
-                   << "nlohmann::json output{};";
-//            for (auto const& member : e)
-//            {
-//
-//            }
+            generate_to_json(e, output);
+            generate_from_json(e, output);
         }
 
         inline void generate_function(cppast::cpp_file &file, std::stringstream &output) {
-            cppast::visit(file,
-                          [&](const cppast::cpp_entity &e) {
-                              return e.kind() == cppast::cpp_entity_kind::class_t && !cppast::is_templated(e) &&
-                                     cppast::has_attribute(e, "attribute::json");
-                          }, [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
-                        if (info.is_new_entity()) {
-                            class_call(e, output, json::generate_all);
-                        }
-                        return true;
-                    });
+            cppast::visit(
+                file,
+                [&](const cppast::cpp_entity &e) {
+                    return e.kind() == cppast::cpp_entity_kind::class_t &&
+                           cppast::has_attribute(e, "attribute::json");
+                },
+                [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
+                    if (info.is_new_entity()) {
+                        class_call(e, output, json::generate_all);
+                    }
+                    return true;
+                });
         }
 
         inline void
@@ -70,7 +91,10 @@ namespace attributes {
             cppast::libclang_parser parser;
             cppast::cpp_entity_index idx;
             std::stringstream output{};
-            output << "#ifndef HEADER_JSON_ATTRIBUTE\n#define HEADER_JSON_ATTRIBUTE\n\nnamespace json {\n";
+            output << "#ifndef HEADER_JSON_ATTRIBUTE" << std::endl
+                   << "#define HEADER_JSON_ATTRIBUTE\n\n"
+                   << "#include <nlohmann/json.hpp>"
+                   << "\n\nnamespace json {\n";
 
             for (auto const &file : files) {
                 std::cout << "Generating to_json and from_json for file: " << file << std::endl;
@@ -83,14 +107,14 @@ namespace attributes {
         }
 
 
-    }
+    }  // namespace json
 
 
     int run(std::string_view base, std::initializer_list<std::string> extensions,
             std::initializer_list<std::string> types,
             cppast::libclang_compile_config config) {
         static std::unordered_map<std::string, function_type> functions = {
-                {"json", json::generate_json}
+            { "json", json::generate_json }
         };
 
         std::vector<function_type> funcs{};
@@ -110,6 +134,6 @@ namespace attributes {
 
         return 0;
     }
-} // namespace attributes
+}  // namespace attributes
 
-#endif //CPATTRIBUTES_CP_ATTRIBUTES_HPP
+#endif  //CPATTRIBUTES_CP_ATTRIBUTES_HPP
