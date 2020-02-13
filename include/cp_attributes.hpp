@@ -23,7 +23,7 @@ namespace attributes {
     namespace {
         using function_type = std::function<void(std::vector<std::string> const &,
                                                  cppast::libclang_compile_config const &)>;
-        using specific_parser = std::function<void(cppast::cpp_entity &, std::stringstream &)>;
+        using specific_parser = std::function<void(const cppast::cpp_class &, std::stringstream &)>;
 
         std::vector<std::string>
         get_all_files(std::string_view base, std::initializer_list<std::string> valid_extensions) {
@@ -37,18 +37,13 @@ namespace attributes {
             return result;
         }
 
-        inline void class_call(cppast::cpp_entity &e, std::stringstream &output, specific_parser const &func,
-                               std::string const &attribute) {
-            if (e.kind() == cppast::cpp_entity_kind::class_t
-                && !cppast::is_template(e.kind())
-                && cppast::has_attribute(e, attribute)) {
-                func(dynamic_cast<cppast::cpp_class&>(e), output);
-            }
+        inline void class_call(const cppast::cpp_entity &e, std::stringstream &output, specific_parser const &func) {
+            func(dynamic_cast<const cppast::cpp_class &>(e), output);
         }
     }
 
     namespace json {
-        void generate_all(cppast::cpp_class &e, std::stringstream &output) {
+        inline void generate_all(const cppast::cpp_class &e, std::stringstream &output) {
             output << "inline nlohmann::json to_json(" << e.name() << " const& object) {"
                    << "nlohmann::json output{};";
 //            for (auto const& member : e)
@@ -57,13 +52,17 @@ namespace attributes {
 //            }
         }
 
-        void generate_function(cppast::cpp_file &file, std::stringstream &output) {
+        inline void generate_function(cppast::cpp_file &file, std::stringstream &output) {
             cppast::visit(file,
-                          [&](cppast::cpp_entity &e, cppast::visitor_info info) {
-                              if (info.is_new_entity()) {
-                                  class_call(e, output, json::generate_all, "attribute::json");
-                              }
-                          });
+                          [&](const cppast::cpp_entity &e) {
+                              return e.kind() == cppast::cpp_entity_kind::class_t && !cppast::is_templated(e) &&
+                                     cppast::has_attribute(e, "attribute::json");
+                          }, [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
+                        if (info.is_new_entity()) {
+                            class_call(e, output, json::generate_all);
+                        }
+                        return true;
+                    });
         }
 
         inline void

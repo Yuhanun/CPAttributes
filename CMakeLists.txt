@@ -3,6 +3,8 @@ project(CPAttributes)
 
 set(CMAKE_CXX_STANDARD 20)
 
+add_subdirectory(cppast)
+
 add_executable(CPAttributes main.cpp)
 
 target_include_directories(CPAttributes
@@ -14,3 +16,5 @@ if(MSVC)
 else()
     target_compile_options(CPAttributes PRIVATE -Wall -Wextra -pedantic -Werror)
 endif()
+
+
