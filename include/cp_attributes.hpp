@@ -8,6 +8,7 @@
 #include <cppast/cpp_class.hpp>  // cpp_class
 #include <cppast/cpp_enum.hpp>   // cpp_enum
 #include <cppast/cpp_member_variable.hpp>
+#include <cppast/cpp_namespace.hpp>
 #include <cppast/libclang_parser.hpp>  // libclang_parser
 #include <cppast/visitor.hpp>          // visit()
 #include <filesystem>
@@ -25,7 +26,7 @@ namespace attributes {
         using function_type = std::function<void(std::vector<std::string> const &,
                                                  cppast::libclang_compile_config const &, std::string const &)>;
         using specific_parser = std::function<void(const cppast::cpp_class &, std::stringstream &,
-                                                   std::stringstream &)>;
+                                                   std::stringstream &, std::string const&)>;
 
         std::vector<std::string>
         get_all_files(std::string_view base, std::initializer_list<std::string> valid_extensions) {
@@ -40,45 +41,54 @@ namespace attributes {
         }
 
         inline void class_call(const cppast::cpp_entity &e, std::stringstream &output, std::stringstream &header,
-                               specific_parser const &func) {
-            func(dynamic_cast<const cppast::cpp_class &>(e), output, header);
+                               specific_parser const &func, std::string const& ns) {
+            func(dynamic_cast<const cppast::cpp_class &>(e), output, header, ns);
         }
     }  // namespace
 
     namespace json {
         inline void generate_to_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
-            header << "\n\tinline void to_json(nlohmann::json& output, " << e.name() << " const& object);";
-            output << "\n\tinline void to_json(nlohmann::json& output, " << e.name() << " const& object) {\n";
+            header << "\ninline void to_json(nlohmann::json& output, " << e.name() << " const& object);";
+            output << "\ninline void to_json(nlohmann::json& output, " << e.name() << " const& object) {\n";
 
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
-                    output << "\t\toutput[\"" << each.name() << "\"] = object." << each.name() << ";\n";
+                    output << "\toutput[\"" << each.name() << "\"] = object." << each.name() << ";\n";
                 }
             }
-            output << "\t}";
+            output << "}";
         }
 
         inline void
         generate_from_json(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
-            header << "\n\tinline void from_json(nlohmann::json const& data, " << e.name() << "& output);";
-            output << "\n\tinline void from_json(nlohmann::json const& data, " << e.name() << "& output) {\n";
+            header << "\ninline void from_json(nlohmann::json const& data, " << e.name() << "& output);";
+            output << "\ninline void from_json(nlohmann::json const& data, " << e.name() << "& output) {\n";
 
             for (auto const &each : e) {
                 if (each.kind() == cppast::cpp_entity_kind::member_variable_t) {
                     auto const &field = dynamic_cast<cppast::cpp_member_variable const &>(each);
                     auto type_name = cppast::to_string(field.type());
-                    output << "\t\toutput." << each.name() << " = data[\"" << each.name() << "\"];\n";
+                    output << "\t\toutput." << each.name() << " = data.at(\"" << each.name() << "\");\n";
                 }
             }
-            output << "\t}";
+            output << "}";
         }
 
-        inline void generate_all(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header) {
+        inline void generate_all(const cppast::cpp_class &e, std::stringstream &output, std::stringstream &header, std::string const& ns) {
+            if (!ns.empty()) {
+                header << "\nnamespace " << ns << "{";
+                output << "\nnamespace " << ns << "{";
+            }
             generate_to_json(e, output, header);
             generate_from_json(e, output, header);
+            if (!ns.empty()) {
+                header << "\n}\n";
+                output << "\n}\n";
+            }
         }
 
         inline void generate_function(cppast::cpp_file &file, std::stringstream &output, std::stringstream &header) {
+            std::string ns{};
             cppast::visit(
                     file,
                     [&](const cppast::cpp_entity &) {
@@ -86,11 +96,14 @@ namespace attributes {
                     },
                     [&](const cppast::cpp_entity &e, cppast::visitor_info info) {
                         if (info.is_new_entity()) {
+                            std::cout << cppast::to_string(e.kind()) << std::endl;
+                            if (e.kind() == cppast::cpp_entity_kind::namespace_t) {
+                                ns = dynamic_cast<const cppast::cpp_namespace&>(e).name();
+                            }
                             if (e.kind() == cppast::cpp_entity_kind::class_t) {
-                                class_call(e, output, header, json::generate_all);
+                                class_call(e, output, header, json::generate_all, ns);
                             }
                             if (e.kind() == cppast::cpp_entity_kind::namespace_t) {
-                                header << "\tusing namespace " << e.name() << ";\n";
                             }
                         }
                         return true;
@@ -108,9 +121,9 @@ namespace attributes {
                         << "#define HEADER_JSON_ATTRIBUTE\n\n"
                         << "#include <nlohmann/json.hpp>\n";
             for (auto const &each : files) {
-                output_file << "#include \"" << each << "\"\n";
+                output_file << "#include " << std::filesystem::absolute(each) << "\n";
             }
-            output_file << "\n\nnamespace json {\n";
+            output_file << "\n\n";
 
             for (auto const &file : files) {
                 std::cout << "Generating to_json and from_json for file: " << file << std::endl;
@@ -120,7 +133,7 @@ namespace attributes {
 
             output_file << header.str() << "\n";
             output_file << output.str();
-            output_file << "\n} // namespace json\n#endif // HEADER_JSON_ATTRIBUTE";
+            output_file << "\n#endif // HEADER_JSON_ATTRIBUTE";
         }
 
 
